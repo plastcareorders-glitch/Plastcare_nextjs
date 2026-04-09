@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       console.warn(`User ${user._id} has no valid phone. Using sandbox test number.`);
     }
 
-    const returnUrl = `${process.env.NEXT_PUBLIC_APP_URL}/order`;
+    const returnUrl = `https://plastcare-nextjs.onrender.com/order`;
     const notifyUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/client/payments/webhook`;
 
     const orderPayload = {
