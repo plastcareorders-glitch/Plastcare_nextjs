@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     );
 
     // Clear the OAuth state cookie
-    const response = NextResponse.redirect(new URL("/dashboard", req.url));
+    const response = NextResponse.redirect('https://plastcare.in');
     response.cookies.delete("oauth_state");
 
     // Set authentication cookie
