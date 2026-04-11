@@ -463,7 +463,7 @@ export default function ProductPage() {
         await clearCart();
         setShowShippingModal(false);
         setPlacingOrder(false);
-        router.push(`/orders/${orderId}`);
+       
       } else {
         throw new Error("No payment session ID received");
       }
@@ -514,7 +514,7 @@ export default function ProductPage() {
         addToast(`Order placed successfully! Order ID: ${data.orderId}`, "success");
         setShowShippingModal(false);
         setPlacingOrder(false);
-        router.push(`/orders/${data.orderId}`);
+        
       } else if (paymentMethod === "cashfree") {
         const orderTotal = (product.salePrice ?? product.price) * selectedQuantity;
         await handleCashfreePayment(data.orderId, data.paymentId, orderTotal);
