@@ -1,7 +1,13 @@
 // context/AuthContext.tsx
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
@@ -16,14 +22,28 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
-  register: (username: string, email: string, password: string) => Promise<{ success: boolean; message: string; email?: string }>;
-  verifyOtp: (email: string, otp: string) => Promise<{ success: boolean; message: string }>;
+  register: (
+    username: string,
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; message: string; email?: string }>;
+  verifyOtp: (
+    email: string,
+    otp: string
+  ) => Promise<{ success: boolean; message: string }>;
   resendOtp: (email: string) => Promise<{ success: boolean; message: string }>;
   forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  resetPassword: (token: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
-  login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  resetPassword: (
+    token: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; message: string }>;
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   clearError: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,34 +54,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Load user from localStorage on mount
-  useEffect(() => {
-    const storedAuth = localStorage.getItem("clientAuth");
-    if (storedAuth) {
-      try {
-        const parsed = JSON.parse(storedAuth);
-        if (parsed.data && parsed.clientAuth) {
-          setUser(parsed.data);
-        }
-      } catch (e) {
-        console.error("Failed to parse auth data");
+  // Fetch user from cookie-based API
+  const refreshUser = async () => {
+    try {
+      const res = await axios.get("/api/client/profile");
+      if (res.data.user) {
+        setUser(res.data.user);
+        // Sync with localStorage for compatibility
+        localStorage.setItem(
+          "clientAuth",
+          JSON.stringify({
+            clientAuth: true,
+            data: res.data.user,
+            createdAt: Date.now(),
+          })
+        );
+      } else {
+        setUser(null);
+        localStorage.removeItem("clientAuth");
       }
+    } catch (err) {
+      setUser(null);
+      localStorage.removeItem("clientAuth");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  useEffect(() => {
+    refreshUser();
   }, []);
 
   const clearError = () => setError(null);
 
-  // Helper: Handle pending cart navigation after successful auth
   const handlePendingCart = () => {
     const pending = localStorage.getItem("pendingCartItem");
     if (pending) {
       try {
         const { productId } = JSON.parse(pending);
         if (productId) {
-          // Clean up first to avoid loops
           localStorage.removeItem("pendingCartItem");
-          // Navigate to the product page
           router.push(`/product/${productId}`);
         } else {
           localStorage.removeItem("pendingCartItem");
@@ -97,13 +129,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post("/api/client/verify-otp", {
-        email,
-        otp,
-      });
+      const response = await axios.post("/api/client/verify-otp", { email, otp });
       const data = response.data;
 
       const { token, user: userData } = data;
+      // Store in localStorage for now (cookie is also set by backend)
       localStorage.setItem(
         "clientAuth",
         JSON.stringify({
@@ -113,10 +143,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         })
       );
       setUser(userData);
-
-      // Check for pending cart item and redirect if exists
       handlePendingCart();
-
       return { success: true, message: data.message };
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || "Verification failed";
@@ -131,11 +158,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post("/api/client/resend-otp", {
-        email,
-      });
-      const data = response.data;
-      return { success: true, message: data.message };
+      const response = await axios.post("/api/client/resend-otp", { email });
+      return { success: true, message: response.data.message };
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || "Failed to resend OTP";
       setError(message);
@@ -149,11 +173,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post("/api/client/forgot-password", {
-        email,
-      });
-      const data = response.data;
-      return { success: true, message: data.message };
+      const response = await axios.post("/api/client/forgot-password", { email });
+      return { success: true, message: response.data.message };
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || "Request failed";
       setError(message);
@@ -171,8 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         token,
         newPassword,
       });
-      const data = response.data;
-      return { success: true, message: data.message };
+      return { success: true, message: response.data.message };
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || "Password reset failed";
       setError(message);
@@ -186,26 +206,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post("/api/client/login", {
-        email,
-        password,
-      });
+      const response = await axios.post("/api/client/login", { email, password });
       const data = response.data;
 
-      const { token, user: userData } = data;
-      localStorage.setItem(
-        "clientAuth",
-        JSON.stringify({
-          clientAuth: token,
-          data: userData,
-          createdAt: Date.now(),
-        })
-      );
-      setUser(userData);
-
-      // Check for pending cart item and redirect if exists
+      // The login endpoint sets an HTTP‑only cookie and also returns token/user.
+      // We'll refresh the user state from /api/auth/me for consistency.
+      await refreshUser();
       handlePendingCart();
-
       return { success: true, message: "Login successful" };
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || "Login failed";
@@ -216,7 +223,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await axios.post("/api/client/logout"); // optional: clear cookie server-side
+    } catch (e) {}
     localStorage.removeItem("clientAuth");
     setUser(null);
     router.push("/");
@@ -236,6 +246,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         logout,
         clearError,
+        refreshUser,
       }}
     >
       {children}

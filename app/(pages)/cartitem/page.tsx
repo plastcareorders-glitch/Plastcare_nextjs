@@ -884,18 +884,7 @@ export default function CartPage() {
               <div className="mt-6 border-t border-slate-200 pt-6">
                 <h3 className="font-semibold text-slate-900 mb-4">Payment Method</h3>
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value="cod"
-                      checked={paymentMethod === "cod"}
-                      onChange={() => setPaymentMethod("cod")}
-                      className="w-4 h-4 accent-emerald-500"
-                      disabled={placingOrder}
-                    />
-                    <span className="text-slate-700">Cash on Delivery</span>
-                  </label>
+                
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="radio"
