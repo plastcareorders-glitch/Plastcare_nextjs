@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import axios from "axios";
+import { load as loadCashfreeSDK } from "@cashfreepayments/cashfree-js";
 import { useProducts } from "@/app/context/ProductContext";
 import { useCart } from "@/app/context/CartContext";
 
@@ -45,6 +46,19 @@ interface MappedProduct {
   inStock: boolean;
   category: string;
   brand: string;
+}
+
+interface ShippingAddress {
+  _id: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  };
+  label: string;
+  isDefault: boolean;
 }
 
 // Helper functions
@@ -117,7 +131,7 @@ export default function ProductPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { products, loading: contextLoading } = useProducts();
-  const { cart, addToCart, loading: cartLoading } = useCart();
+  const { cart, addToCart, loading: cartLoading, clearCart } = useCart();
 
   // Product state
   const [product, setProduct] = useState<Product | null>(null);
@@ -133,17 +147,31 @@ export default function ProductPage() {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: string }>>([]);
 
-  // Shipping modal
+  // Shipping modal state
   const [showShippingModal, setShowShippingModal] = useState(false);
-  const [shippingForm, setShippingForm] = useState({
+  const [modalMode, setModalMode] = useState<"cart" | "buy">("cart");
+  const [addresses, setAddresses] = useState<ShippingAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("");
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+  const [addingAddress, setAddingAddress] = useState(false);
+  const [showAddAddressForm, setShowAddAddressForm] = useState(false);
+
+  // Payment state (for Buy Now)
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "cashfree">("cashfree");
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const [cashfreeInstance, setCashfreeInstance] = useState<any>(null);
+
+  // New address form state
+  const [newAddressForm, setNewAddressForm] = useState({
     street: "",
     city: "",
     state: "",
     postalCode: "",
-    country: "",
+    country: "India",
     label: "Home",
+    isDefault: false,
   });
-  const [shippingErrors, setShippingErrors] = useState<Record<string, string>>({});
+  const [newAddressErrors, setNewAddressErrors] = useState<Record<string, string>>({});
 
   // Quantity
   const [selectedQuantity, setSelectedQuantity] = useState(1);
@@ -160,6 +188,22 @@ export default function ProductPage() {
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
+
+  // Initialize Cashfree SDK once on mount
+  useEffect(() => {
+    const initCashfree = async () => {
+      try {
+        const cashfree = await loadCashfreeSDK({
+          mode: process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox"
+        });
+        setCashfreeInstance(cashfree);
+        console.log("✅ Cashfree SDK initialized");
+      } catch (err) {
+        console.error("Failed to initialize Cashfree SDK:", err);
+      }
+    };
+    initCashfree();
+  }, []);
 
   // Fetch product
   useEffect(() => {
@@ -230,6 +274,95 @@ export default function ProductPage() {
     setSelectedQuantity(newQty);
   };
 
+  // Fetch shipping addresses from API
+  const fetchAddresses = async () => {
+    setLoadingAddresses(true);
+    try {
+      const response = await axios.get("/api/client/shipping");
+      if (response.data.success) {
+        const fetchedAddresses = response.data.addresses;
+        setAddresses(fetchedAddresses);
+        // Pre-select default address if any
+        const defaultAddr = fetchedAddresses.find((addr: ShippingAddress) => addr.isDefault);
+        if (defaultAddr) {
+          setSelectedAddressId(defaultAddr._id);
+        } else if (fetchedAddresses.length > 0) {
+          setSelectedAddressId(fetchedAddresses[0]._id);
+        }
+      }
+    } catch (err: any) {
+      console.error("Error fetching addresses:", err);
+      addToast("Failed to load shipping addresses", "error");
+    } finally {
+      setLoadingAddresses(false);
+    }
+  };
+
+  // Add new shipping address
+  const handleAddAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const errors: Record<string, string> = {};
+    const { street, city, state, postalCode, country } = newAddressForm;
+
+    if (!street.trim()) errors.street = "Street address is required";
+    if (!city.trim()) errors.city = "City is required";
+    if (!state.trim()) errors.state = "State is required";
+    if (!postalCode.trim()) errors.postalCode = "Postal code is required";
+    else if (!/^\d{6}$/.test(postalCode.trim())) errors.postalCode = "Postal code must be 6 digits";
+    if (!country.trim()) errors.country = "Country is required";
+
+    setNewAddressErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      addToast("Please fill all required fields correctly", "error");
+      return;
+    }
+
+    setAddingAddress(true);
+    try {
+      const response = await axios.post("/api/client/shipping", newAddressForm);
+      if (response.data.success) {
+        addToast("Address added successfully!", "success");
+        // Reset form and refresh addresses
+        setNewAddressForm({
+          street: "",
+          city: "",
+          state: "",
+          postalCode: "",
+          country: "India",
+          label: "Home",
+          isDefault: false,
+        });
+        setShowAddAddressForm(false);
+        await fetchAddresses();
+      } else {
+        addToast(response.data.message || "Failed to add address", "error");
+      }
+    } catch (err: any) {
+      console.error("Error adding address:", err);
+      addToast(err.response?.data?.message || "Failed to add address", "error");
+    } finally {
+      setAddingAddress(false);
+    }
+  };
+
+  // Handle address selection
+  const handleSelectAddress = (addressId: string) => {
+    setSelectedAddressId(addressId);
+  };
+
+  // Proceed to add to cart after address is selected
+  const proceedToAddToCart = () => {
+    if (!selectedAddressId && addresses.length === 0) {
+      addToast("Please select or add a shipping address", "warning");
+      return;
+    }
+    // Save selected address ID in localStorage for future use (optional)
+    localStorage.setItem("demoShippingId", selectedAddressId);
+    setShowShippingModal(false);
+    addToCartLogic();
+  };
+
   // Add to cart logic (actual API call)
   const addToCartLogic = async () => {
     if (!product) return;
@@ -253,7 +386,7 @@ export default function ProductPage() {
     }
   };
 
-  // Handle Add to Cart click with localStorage auth check
+  // Handle Add to Cart click with auth and shipping check
   const handleAddToCart = () => {
     // Check for authentication using localStorage key "clientAuth"
     const clientAuth = localStorage.getItem("clientAuth");
@@ -270,12 +403,126 @@ export default function ProductPage() {
       return;
     }
 
-    // User is authenticated (clientAuth exists), check shipping address (demo requirement)
-    const shippingId = localStorage.getItem("demoShippingId");
-    if (!shippingId) {
-      setShowShippingModal(true);
-    } else {
-      addToCartLogic();
+    // User is authenticated, fetch addresses and show modal in cart mode
+    setModalMode("cart");
+    setShowShippingModal(true);
+    fetchAddresses();
+  };
+
+  // Handle Buy Now click
+  const handleBuyNow = () => {
+    const clientAuth = localStorage.getItem("clientAuth");
+    if (!clientAuth) {
+      localStorage.setItem(
+        "pendingBuyNow",
+        JSON.stringify({
+          productId: product?._id,
+          quantity: selectedQuantity,
+        })
+      );
+      router.push("/signup");
+      return;
+    }
+
+    setModalMode("buy");
+    setShowShippingModal(true);
+    fetchAddresses();
+  };
+
+  // Cashfree payment handler
+  const handleCashfreePayment = async (orderId: string, paymentId: string, amount: number) => {
+    if (!cashfreeInstance) {
+      addToast("Payment system is still loading. Please try again.", "error");
+      setPlacingOrder(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/client/payments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to create Cashfree order");
+      }
+
+      if (data.paymentSessionId) {
+        const sessionId = data.paymentSessionId; // sanitize if needed
+        console.log("Payment session ID:", sessionId);
+
+        const result = await cashfreeInstance.checkout({
+          paymentSessionId: sessionId,
+          redirectTarget: "_self",
+        });
+
+        console.log("Cashfree checkout result:", result);
+        // Clear cart (optional) and redirect
+        await clearCart();
+        setShowShippingModal(false);
+        setPlacingOrder(false);
+        router.push(`/orders/${orderId}`);
+      } else {
+        throw new Error("No payment session ID received");
+      }
+    } catch (err: any) {
+      console.error("Cashfree payment error:", err);
+      addToast(err.message || "Payment failed. Please try again.", "error");
+      setPlacingOrder(false);
+    }
+  };
+
+  // Place order for Buy Now
+  const handlePlaceOrder = async () => {
+    if (!product) return;
+    if (!selectedAddressId) {
+      addToast("Please select a shipping address", "warning");
+      return;
+    }
+
+    setPlacingOrder(true);
+    try {
+      const payload = {
+        shippingAddressId: selectedAddressId,
+        paymentMethod,
+        selectedItems: [
+          {
+            productId: product._id,
+            quantity: selectedQuantity,
+            variant: null, // or pass variant if needed
+          },
+        ],
+        notes: "",
+      };
+
+      const res = await fetch("/api/client/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to create order");
+      }
+
+      if (paymentMethod === "cod") {
+        await clearCart();
+        addToast(`Order placed successfully! Order ID: ${data.orderId}`, "success");
+        setShowShippingModal(false);
+        setPlacingOrder(false);
+        router.push(`/orders/${data.orderId}`);
+      } else if (paymentMethod === "cashfree") {
+        const orderTotal = (product.salePrice ?? product.price) * selectedQuantity;
+        await handleCashfreePayment(data.orderId, data.paymentId, orderTotal);
+      }
+    } catch (err: any) {
+      console.error("Order placement error:", err);
+      addToast(err.message || "An error occurred while placing the order.", "error");
+      setPlacingOrder(false);
     }
   };
 
@@ -287,41 +534,6 @@ export default function ProductPage() {
     const message = `Hello, I'm interested in *${product.title}*.%0A💰 Price: ₹${displayPrice.toLocaleString()}%0A📦 Quantity: ${selectedQuantity}%0A🔗 Product Link: ${window.location.href}%0A%0ACould you please share more details?`;
     const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
     window.open(whatsappUrl, "_blank");
-  };
-
-  // Shipping form handlers
-  const handleShippingInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setShippingForm((prev) => ({ ...prev, [name]: value }));
-    if (shippingErrors[name]) setShippingErrors((prev) => ({ ...prev, [name]: "" }));
-  };
-
-  const handleShippingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errors: Record<string, string> = {};
-    const { street, city, state, postalCode, country } = shippingForm;
-
-    if (!street.trim()) errors.street = "Street address is required";
-    if (!city.trim()) errors.city = "City is required";
-    if (!state.trim()) errors.state = "State is required";
-    if (!postalCode.trim()) errors.postalCode = "Postal code is required";
-    else if (!/^\d{6}$/.test(postalCode.trim())) errors.postalCode = "Postal code must be 6 digits";
-    if (!country.trim()) errors.country = "Country is required";
-
-    setShippingErrors(errors);
-
-    if (Object.keys(errors).length > 0) {
-      addToast("Please fill all required fields correctly", "error");
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const shippingId = "shipping_" + Date.now();
-    localStorage.setItem("demoShippingId", shippingId);
-    setShowShippingModal(false);
-    addToast("Shipping address saved successfully!", "success");
-    // After saving shipping, add to cart
-    await addToCartLogic();
   };
 
   // Image navigation & swipe
@@ -409,20 +621,20 @@ export default function ProductPage() {
               toast.type === "success"
                 ? "bg-gradient-to-r from-emerald-500 to-teal-600"
                 : toast.type === "error"
-                  ? "bg-gradient-to-r from-red-500 to-rose-600"
-                  : toast.type === "warning"
-                    ? "bg-gradient-to-r from-amber-500 to-orange-600"
-                    : "bg-gradient-to-r from-blue-500 to-indigo-600"
+                ? "bg-gradient-to-r from-red-500 to-rose-600"
+                : toast.type === "warning"
+                ? "bg-gradient-to-r from-amber-500 to-orange-600"
+                : "bg-gradient-to-r from-blue-500 to-indigo-600"
             }`}
           >
             <span className="text-xl">
               {toast.type === "success"
                 ? "✓"
                 : toast.type === "error"
-                  ? "✗"
-                  : toast.type === "warning"
-                    ? "⚠"
-                    : "ℹ"}
+                ? "✗"
+                : toast.type === "warning"
+                ? "⚠"
+                : "ℹ"}
             </span>
             <span>{toast.message}</span>
             <button
@@ -435,12 +647,14 @@ export default function ProductPage() {
         ))}
       </div>
 
-      {/* Shipping Modal */}
+      {/* Shipping Address Modal */}
       {showShippingModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-hidden shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
             <div className="px-8 pt-8 pb-6 border-b flex items-center justify-between">
-              <h2 className="text-2xl font-semibold text-gray-900">Add Shipping Address</h2>
+              <h2 className="text-2xl font-semibold text-gray-900">
+                {modalMode === "cart" ? "Select Shipping Address" : "Checkout"}
+              </h2>
               <button
                 onClick={() => setShowShippingModal(false)}
                 className="text-4xl leading-none text-gray-400 hover:text-gray-600 transition-colors"
@@ -449,70 +663,247 @@ export default function ProductPage() {
               </button>
             </div>
 
-            <form onSubmit={handleShippingSubmit} className="p-8 space-y-6">
-              <div>
-                <input
-                  name="street"
-                  placeholder="Street Address"
-                  value={shippingForm.street}
-                  onChange={handleShippingInputChange}
-                  className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
-                />
-                {shippingErrors.street && <p className="text-red-500 text-sm mt-1.5">{shippingErrors.street}</p>}
-              </div>
+            <div className="flex-1 overflow-y-auto p-8">
+              {loadingAddresses ? (
+                <div className="text-center py-8 text-gray-500">Loading addresses...</div>
+              ) : (
+                <>
+                  {/* List of existing addresses */}
+                  {addresses.length > 0 && !showAddAddressForm && (
+                    <div className="space-y-4 mb-6">
+                      {addresses.map((addr) => (
+                        <div
+                          key={addr._id}
+                          className={`border rounded-2xl p-4 cursor-pointer transition-all ${
+                            selectedAddressId === addr._id
+                              ? "border-amber-500 bg-amber-50 ring-2 ring-amber-200"
+                              : "border-gray-200 hover:border-amber-300"
+                          }`}
+                          onClick={() => handleSelectAddress(addr._id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="mt-1">
+                              <div
+                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                  selectedAddressId === addr._id
+                                    ? "border-amber-500 bg-amber-500"
+                                    : "border-gray-300"
+                                }`}
+                              >
+                                {selectedAddressId === addr._id && (
+                                  <div className="w-2 h-2 bg-white rounded-full" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-gray-900">{addr.label}</span>
+                                {addr.isDefault && (
+                                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-gray-600 text-sm mt-1">
+                                {addr.address.street}, {addr.address.city}, {addr.address.state}{" "}
+                                {addr.address.postalCode}, {addr.address.country}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-              <div>
-                <input
-                  name="city"
-                  placeholder="City"
-                  value={shippingForm.city}
-                  onChange={handleShippingInputChange}
-                  className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
-                />
-                {shippingErrors.city && <p className="text-red-500 text-sm mt-1.5">{shippingErrors.city}</p>}
-              </div>
+                  {/* Add New Address Form */}
+                  {showAddAddressForm ? (
+                    <form onSubmit={handleAddAddress} className="space-y-5">
+                      <h3 className="text-xl font-semibold text-gray-800 mb-4">Add New Address</h3>
+                      <div>
+                        <input
+                          name="street"
+                          placeholder="Street Address *"
+                          value={newAddressForm.street}
+                          onChange={(e) =>
+                            setNewAddressForm((prev) => ({ ...prev, street: e.target.value }))
+                          }
+                          className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                        />
+                        {newAddressErrors.street && (
+                          <p className="text-red-500 text-sm mt-1.5">{newAddressErrors.street}</p>
+                        )}
+                      </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <input
-                    name="state"
-                    placeholder="State"
-                    value={shippingForm.state}
-                    onChange={handleShippingInputChange}
-                    className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
-                  />
-                  {shippingErrors.state && <p className="text-red-500 text-sm mt-1.5">{shippingErrors.state}</p>}
-                </div>
-                <div>
-                  <input
-                    name="postalCode"
-                    placeholder="Postal Code"
-                    value={shippingForm.postalCode}
-                    onChange={handleShippingInputChange}
-                    className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
-                  />
-                  {shippingErrors.postalCode && <p className="text-red-500 text-sm mt-1.5">{shippingErrors.postalCode}</p>}
-                </div>
-              </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <input
+                            name="city"
+                            placeholder="City *"
+                            value={newAddressForm.city}
+                            onChange={(e) =>
+                              setNewAddressForm((prev) => ({ ...prev, city: e.target.value }))
+                            }
+                            className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                          />
+                          {newAddressErrors.city && (
+                            <p className="text-red-500 text-sm mt-1.5">{newAddressErrors.city}</p>
+                          )}
+                        </div>
+                        <div>
+                          <input
+                            name="state"
+                            placeholder="State *"
+                            value={newAddressForm.state}
+                            onChange={(e) =>
+                              setNewAddressForm((prev) => ({ ...prev, state: e.target.value }))
+                            }
+                            className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                          />
+                          {newAddressErrors.state && (
+                            <p className="text-red-500 text-sm mt-1.5">{newAddressErrors.state}</p>
+                          )}
+                        </div>
+                      </div>
 
-              <div>
-                <input
-                  name="country"
-                  placeholder="Country"
-                  value={shippingForm.country}
-                  onChange={handleShippingInputChange}
-                  className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
-                />
-                {shippingErrors.country && <p className="text-red-500 text-sm mt-1.5">{shippingErrors.country}</p>}
-              </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <input
+                            name="postalCode"
+                            placeholder="Postal Code *"
+                            value={newAddressForm.postalCode}
+                            onChange={(e) =>
+                              setNewAddressForm((prev) => ({ ...prev, postalCode: e.target.value }))
+                            }
+                            className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                          />
+                          {newAddressErrors.postalCode && (
+                            <p className="text-red-500 text-sm mt-1.5">{newAddressErrors.postalCode}</p>
+                          )}
+                        </div>
+                        <div>
+                          <input
+                            name="country"
+                            placeholder="Country *"
+                            value={newAddressForm.country}
+                            onChange={(e) =>
+                              setNewAddressForm((prev) => ({ ...prev, country: e.target.value }))
+                            }
+                            className="w-full px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                          />
+                          {newAddressErrors.country && (
+                            <p className="text-red-500 text-sm mt-1.5">{newAddressErrors.country}</p>
+                          )}
+                        </div>
+                      </div>
 
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold py-4 rounded-3xl transition-all active:scale-95 text-lg"
-              >
-                Save &amp; Continue
-              </button>
-            </form>
+                      <div className="flex gap-4">
+                        <input
+                          name="label"
+                          placeholder="Label (e.g., Home, Office)"
+                          value={newAddressForm.label}
+                          onChange={(e) =>
+                            setNewAddressForm((prev) => ({ ...prev, label: e.target.value }))
+                          }
+                          className="flex-1 px-5 py-4 border border-gray-200 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 rounded-3xl outline-none transition-all"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAddressForm.isDefault}
+                          onChange={(e) =>
+                            setNewAddressForm((prev) => ({ ...prev, isDefault: e.target.checked }))
+                          }
+                          className="w-5 h-5 text-amber-500 rounded focus:ring-amber-400"
+                        />
+                        <span className="text-gray-700">Set as default address</span>
+                      </label>
+
+                      <div className="flex gap-4 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddAddressForm(false)}
+                          className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-4 rounded-3xl transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={addingAddress}
+                          className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold py-4 rounded-3xl transition-all disabled:opacity-50"
+                        >
+                          {addingAddress ? "Saving..." : "Save Address"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="text-center">
+                      {addresses.length === 0 && (
+                        <p className="text-gray-500 mb-6">No saved addresses. Please add one.</p>
+                      )}
+                      <button
+                        onClick={() => setShowAddAddressForm(true)}
+                        className="inline-flex items-center gap-2 text-amber-600 hover:text-amber-700 font-semibold"
+                      >
+                        <span className="text-xl">+</span> Add New Address
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Payment Method Selection (only for Buy Now mode) */}
+                  {modalMode === "buy" && !showAddAddressForm && addresses.length > 0 && (
+                    <div className="mt-6 pt-6 border-t">
+                      <h3 className="font-semibold text-gray-900 mb-4">Payment Method</h3>
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="cashfree"
+                            checked={paymentMethod === "cashfree"}
+                            onChange={() => setPaymentMethod("cashfree")}
+                            className="w-4 h-4 accent-amber-500"
+                          />
+                          <span className="text-gray-700">Cashfree (Card/UPI/NetBanking)</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="cod"
+                            checked={paymentMethod === "cod"}
+                            onChange={() => setPaymentMethod("cod")}
+                            className="w-4 h-4 accent-amber-500"
+                          />
+                          <span className="text-gray-700">Cash on Delivery</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {!showAddAddressForm && (
+              <div className="p-8 border-t bg-gray-50">
+                <button
+                  onClick={modalMode === "cart" ? proceedToAddToCart : handlePlaceOrder}
+                  disabled={
+                    addresses.length === 0 ||
+                    !selectedAddressId ||
+                    (modalMode === "buy" && placingOrder)
+                  }
+                  className="w-full bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 text-white font-semibold py-4 rounded-3xl transition-all disabled:cursor-not-allowed"
+                >
+                  {modalMode === "cart"
+                    ? "Proceed to Cart"
+                    : placingOrder
+                    ? "Placing Order..."
+                    : "Place Order"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -540,7 +931,6 @@ export default function ProductPage() {
 
                 {product.images.length > 1 && (
                   <>
-                    {/* Navigation arrows */}
                     <button
                       onClick={prevImage}
                       className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white backdrop-blur-md text-3xl w-12 h-12 flex items-center justify-center rounded-3xl shadow-xl transition-all hover:scale-110 active:scale-95"
@@ -554,21 +944,17 @@ export default function ProductPage() {
                       ›
                     </button>
 
-                    {/* Counter */}
                     <div className="absolute top-6 right-6 bg-black/70 text-white text-sm font-medium px-4 py-1.5 rounded-3xl backdrop-blur-md">
                       {currentImageIndex + 1} / {product.images.length}
                     </div>
 
-                    {/* Dots */}
                     <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
                       {product.images.map((_, idx) => (
                         <button
                           key={idx}
                           onClick={() => setCurrentImageIndex(idx)}
                           className={`w-3 h-3 rounded-full transition-all ${
-                            idx === currentImageIndex
-                              ? "bg-amber-500 w-8"
-                              : "bg-white/60 hover:bg-white/80"
+                            idx === currentImageIndex ? "bg-amber-500 w-8" : "bg-white/60 hover:bg-white/80"
                           }`}
                         />
                       ))}
@@ -577,7 +963,6 @@ export default function ProductPage() {
                 )}
               </div>
 
-              {/* Thumbnails */}
               {product.images.length > 1 && (
                 <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
                   {product.images.map((img, idx) => (
@@ -590,11 +975,7 @@ export default function ProductPage() {
                           : "border-transparent opacity-70 hover:opacity-100 hover:border-amber-300"
                       }`}
                     >
-                      <img
-                        src={img.url}
-                        alt={`Thumbnail ${idx}`}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={img.url} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
@@ -603,10 +984,11 @@ export default function ProductPage() {
 
             {/* Product Info */}
             <div className="bg-white rounded-3xl shadow-2xl p-8 lg:p-10 flex flex-col">
-              <div className="uppercase text-amber-600 font-semibold tracking-[0.5px] text-sm mb-1">{product.category}</div>
+              <div className="uppercase text-amber-600 font-semibold tracking-[0.5px] text-sm mb-1">
+                {product.category}
+              </div>
               <h1 className="text-4xl font-bold leading-tight text-gray-900 mb-4">{product.title}</h1>
 
-              {/* Rating */}
               <div className="flex items-center gap-3 mb-6">
                 <div className="flex">{getStars(product.rating || 0)}</div>
                 <div className="text-gray-600 text-lg">
@@ -614,7 +996,6 @@ export default function ProductPage() {
                 </div>
               </div>
 
-              {/* Price */}
               <div className="flex items-baseline flex-wrap gap-4 mb-6">
                 <span className="text-4xl font-bold text-gray-900">₹{displayPrice.toLocaleString()}</span>
                 {hasDiscount && (
@@ -629,25 +1010,18 @@ export default function ProductPage() {
 
               <p className="text-gray-600 leading-relaxed text-lg mb-8">{product.description}</p>
 
-              {/* Stock */}
               <div
                 className={`inline-flex items-center px-6 py-2.5 rounded-3xl font-semibold text-sm mb-6 w-fit ${
                   product.stock > 10
                     ? "bg-sky-100 text-sky-700"
                     : product.stock > 0
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-red-100 text-red-700"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-red-100 text-red-700"
                 }`}
               >
-                {product.stock > 10
-                  ? "In Stock"
-                  : product.stock > 0
-                    ? "Low Stock"
-                    : "Out of Stock"}{" "}
-                • {product.stock} left
+                {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"} • {product.stock} left
               </div>
 
-              {/* Cart info */}
               {cartQuantity > 0 && !isOutOfStock && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 px-6 py-4 rounded-3xl text-sm mb-6">
                   You already have <span className="font-semibold">{cartQuantity}</span> in cart. Can add{" "}
@@ -655,7 +1029,6 @@ export default function ProductPage() {
                 </div>
               )}
 
-              {/* Quantity selector */}
               {!isOutOfStock && (
                 <div className="flex items-center bg-gray-100 rounded-3xl p-2 w-fit mb-8">
                   <button
@@ -676,7 +1049,6 @@ export default function ProductPage() {
                 </div>
               )}
 
-              {/* Action buttons */}
               <div className="flex gap-4 mt-auto">
                 <button
                   onClick={handleAddToCart}
@@ -695,23 +1067,31 @@ export default function ProductPage() {
                 </button>
 
                 <button
-                  onClick={handleWhatsAppClick}
-                  className="flex-1 bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-6 rounded-3xl text-xl transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-green-400/30"
+                  onClick={handleBuyNow}
+                  disabled={isOutOfStock || placingOrder}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-6 rounded-3xl text-xl transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-emerald-300/30"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="26"
-                    height="26"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
-                  </svg>
-                  WhatsApp
+                  {placingOrder ? "Processing..." : "Buy Now"}
                 </button>
               </div>
 
-              <div className="text-gray-500 flex items-center gap-2 text-sm mt-8">
+              <button
+                onClick={handleWhatsAppClick}
+                className="mt-4 w-full bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-green-400/30"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
+                </svg>
+                WhatsApp
+              </button>
+
+              <div className="text-gray-500 flex items-center gap-2 text-sm mt-6">
                 <span className="text-2xl">🚚</span>
                 Free shipping available on all orders
               </div>
@@ -736,7 +1116,6 @@ export default function ProductPage() {
               <div className="text-center py-12 text-gray-400">No related products found</div>
             ) : (
               <div className="relative">
-                {/* Carousel controls */}
                 <button
                   onClick={handlePrev}
                   className="absolute -left-5 top-1/2 -translate-y-1/2 bg-white shadow-xl hover:bg-amber-500 hover:text-white w-12 h-12 rounded-3xl text-4xl flex items-center justify-center z-10 transition-all hidden xl:flex"
@@ -780,7 +1159,9 @@ export default function ProductPage() {
                       </div>
 
                       <div className="p-6">
-                        <div className="uppercase text-amber-600 text-xs tracking-widest font-medium mb-1">{p.category}</div>
+                        <div className="uppercase text-amber-600 text-xs tracking-widest font-medium mb-1">
+                          {p.category}
+                        </div>
                         <h3 className="font-semibold text-lg leading-tight line-clamp-2 mb-3 group-hover:text-amber-600 transition-colors">
                           {p.name}
                         </h3>
@@ -793,7 +1174,9 @@ export default function ProductPage() {
                         <div className="flex items-baseline gap-3">
                           <span className="font-bold text-2xl">₹{p.salePrice.toLocaleString()}</span>
                           {p.originalPrice > p.salePrice && (
-                            <span className="text-gray-400 line-through text-base">₹{p.originalPrice.toLocaleString()}</span>
+                            <span className="text-gray-400 line-through text-base">
+                              ₹{p.originalPrice.toLocaleString()}
+                            </span>
                           )}
                         </div>
                       </div>
