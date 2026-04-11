@@ -867,17 +867,7 @@ export default function ProductPage() {
                           />
                           <span className="text-gray-700">Cashfree (Card/UPI/NetBanking)</span>
                         </label>
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="paymentMethod"
-                            value="cod"
-                            checked={paymentMethod === "cod"}
-                            onChange={() => setPaymentMethod("cod")}
-                            className="w-4 h-4 accent-amber-500"
-                          />
-                          <span className="text-gray-700">Cash on Delivery</span>
-                        </label>
+                  
                       </div>
                     </div>
                   )}
