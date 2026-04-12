@@ -265,6 +265,7 @@ export default function ProductPage() {
   const cartItem = cart?.items?.find((item: any) => item.product?._id === product?._id);
   const cartQuantity = cartItem?.quantity || 0;
   const maxAdd = product ? Math.max(0, product.stock - cartQuantity) : 0;
+  const isOutOfStock = product?.stock === 0 || maxAdd <= 0;
 
   // Quantity handlers
   const handleQuantityChange = (delta: number) => {
@@ -605,7 +606,6 @@ export default function ProductPage() {
 
   const displayPrice = product.salePrice ?? product.price;
   const hasDiscount = !!product.salePrice && product.salePrice < product.price;
-  const isOutOfStock = product.stock === 0 || maxAdd <= 0;
 
   return (
     <>
@@ -968,9 +968,9 @@ export default function ProductPage() {
               )}
             </div>
 
-            {/* Product Info - Mobile Optimized: Action buttons appear above description on small screens */}
+            {/* Product Info */}
             <div className="bg-white rounded-3xl shadow-2xl p-8 lg:p-10 flex flex-col space-y-6">
-              {/* Category & Title & Rating & Price - Always on top */}
+              {/* Category & Title & Rating & Price */}
               <div className="space-y-2">
                 <div className="uppercase text-amber-600 font-semibold tracking-[0.5px] text-sm">
                   {product.category}
@@ -995,72 +995,83 @@ export default function ProductPage() {
                 </div>
               </div>
 
-              {/* Quantity selector and action buttons - On mobile they appear before description, on desktop after description */}
-              {!isOutOfStock && (
-                <div className="order-2 lg:order-3 space-y-5">
-                  <div className="flex items-center bg-gray-100 rounded-3xl p-2 w-fit">
-                    <button
-                      onClick={() => handleQuantityChange(-1)}
-                      disabled={selectedQuantity <= 1}
-                      className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
-                    >
-                      −
-                    </button>
-                    <span className="font-bold text-2xl px-8">{selectedQuantity}</span>
-                    <button
-                      onClick={() => handleQuantityChange(1)}
-                      disabled={selectedQuantity >= maxAdd}
-                      className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <button
-                      onClick={handleAddToCart}
-                      disabled={isOutOfStock || isAddingToCart || cartLoading}
-                      className="flex-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 text-[#7c2d12] font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-amber-300/30"
-                    >
-                      {isAddingToCart || cartLoading ? (
-                        "Adding..."
-                      ) : isOutOfStock ? (
-                        "Out of Stock"
-                      ) : cartQuantity > 0 ? (
-                        `Add ${selectedQuantity} More`
-                      ) : (
-                        "Add to Cart"
-                      )}
-                    </button>
-
-                    <button
-                      onClick={handleBuyNow}
-                      disabled={isOutOfStock || placingOrder}
-                      className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-emerald-300/30"
-                    >
-                      {placingOrder ? "Processing..." : "Buy Now"}
-                    </button>
-                  </div>
-
+              {/* Quantity selector and action buttons - ALWAYS RENDERED (FIXED) */}
+              <div className="order-2 lg:order-3 space-y-5">
+                {/* Quantity selector */}
+                <div className="flex items-center bg-gray-100 rounded-3xl p-2 w-fit">
                   <button
-                    onClick={handleWhatsAppClick}
-                    className="w-full bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-4 rounded-3xl text-base transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-green-400/30"
+                    onClick={() => handleQuantityChange(-1)}
+                    disabled={selectedQuantity <= 1 || maxAdd <= 0}
+                    className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="22"
-                      height="22"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
-                    </svg>
-                    WhatsApp
+                    −
+                  </button>
+                  <span className="font-bold text-2xl px-8">{selectedQuantity}</span>
+                  <button
+                    onClick={() => handleQuantityChange(1)}
+                    disabled={selectedQuantity >= maxAdd || maxAdd <= 0}
+                    className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
+                  >
+                    +
                   </button>
                 </div>
-              )}
 
-              {/* Stock & cart info - appears after description on mobile */}
+                {/* Message when cart is full or out of stock */}
+                {maxAdd <= 0 && product.stock > 0 && (
+                  <div className="bg-amber-50 text-amber-800 px-5 py-3 rounded-2xl text-sm">
+                    You already have the maximum available quantity of this product in your cart.
+                  </div>
+                )}
+                {product.stock === 0 && (
+                  <div className="bg-red-50 text-red-700 px-5 py-3 rounded-2xl text-sm">
+                    This product is currently out of stock.
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={isOutOfStock || isAddingToCart || cartLoading}
+                    className="flex-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 text-[#7c2d12] font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-amber-300/30"
+                  >
+                    {isAddingToCart || cartLoading ? (
+                      "Adding..."
+                    ) : isOutOfStock ? (
+                      "Out of Stock"
+                    ) : cartQuantity > 0 ? (
+                      `Add ${selectedQuantity} More`
+                    ) : (
+                      "Add to Cart"
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleBuyNow}
+                    disabled={isOutOfStock || placingOrder}
+                    className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-emerald-300/30"
+                  >
+                    {placingOrder ? "Processing..." : "Buy Now"}
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleWhatsAppClick}
+                  className="w-full bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-4 rounded-3xl text-base transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-green-400/30"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
+                  </svg>
+                  WhatsApp
+                </button>
+              </div>
+
+              {/* Stock & cart info & description */}
               <div className="order-3 lg:order-2 space-y-4">
                 <div
                   className={`inline-flex items-center px-5 py-2 rounded-3xl font-semibold text-sm w-fit ${
