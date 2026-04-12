@@ -11,7 +11,9 @@ export default function LayoutWrapper({
 }) {
   const pathname = usePathname();
 
-  const hideLayout = ["/signin", "/signup"].includes(pathname);
+  const hideLayout =
+    ["/signin", "/signup"].includes(pathname) ||
+    pathname.startsWith("/admin");
 
   return (
     <>

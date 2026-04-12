@@ -450,7 +450,7 @@ export default function ProductPage() {
       }
 
       if (data.paymentSessionId) {
-        const sessionId = data.paymentSessionId; // sanitize if needed
+        const sessionId = data.paymentSessionId;
         console.log("Payment session ID:", sessionId);
 
         const result = await cashfreeInstance.checkout({
@@ -459,11 +459,9 @@ export default function ProductPage() {
         });
 
         console.log("Cashfree checkout result:", result);
-        // Clear cart (optional) and redirect
         await clearCart();
         setShowShippingModal(false);
         setPlacingOrder(false);
-       
       } else {
         throw new Error("No payment session ID received");
       }
@@ -491,7 +489,7 @@ export default function ProductPage() {
           {
             productId: product._id,
             quantity: selectedQuantity,
-            variant: null, // or pass variant if needed
+            variant: null,
           },
         ],
         notes: "",
@@ -514,7 +512,6 @@ export default function ProductPage() {
         addToast(`Order placed successfully! Order ID: ${data.orderId}`, "success");
         setShowShippingModal(false);
         setPlacingOrder(false);
-        
       } else if (paymentMethod === "cashfree") {
         const orderTotal = (product.salePrice ?? product.price) * selectedQuantity;
         await handleCashfreePayment(data.orderId, data.paymentId, orderTotal);
@@ -867,7 +864,6 @@ export default function ProductPage() {
                           />
                           <span className="text-gray-700">Cashfree (Card/UPI/NetBanking)</span>
                         </label>
-                  
                       </div>
                     </div>
                   )}
@@ -972,118 +968,125 @@ export default function ProductPage() {
               )}
             </div>
 
-            {/* Product Info */}
-            <div className="bg-white rounded-3xl shadow-2xl p-8 lg:p-10 flex flex-col">
-              <div className="uppercase text-amber-600 font-semibold tracking-[0.5px] text-sm mb-1">
-                {product.category}
-              </div>
-              <h1 className="text-4xl font-bold leading-tight text-gray-900 mb-4">{product.title}</h1>
-
-              <div className="flex items-center gap-3 mb-6">
-                <div className="flex">{getStars(product.rating || 0)}</div>
-                <div className="text-gray-600 text-lg">
-                  {product.rating || 0} <span className="text-gray-400">({product.totalReviews || 0} reviews)</span>
+            {/* Product Info - Mobile Optimized: Action buttons appear above description on small screens */}
+            <div className="bg-white rounded-3xl shadow-2xl p-8 lg:p-10 flex flex-col space-y-6">
+              {/* Category & Title & Rating & Price - Always on top */}
+              <div className="space-y-2">
+                <div className="uppercase text-amber-600 font-semibold tracking-[0.5px] text-sm">
+                  {product.category}
                 </div>
-              </div>
-
-              <div className="flex items-baseline flex-wrap gap-4 mb-6">
-                <span className="text-4xl font-bold text-gray-900">₹{displayPrice.toLocaleString()}</span>
-                {hasDiscount && (
-                  <>
-                    <span className="text-xl text-gray-400 line-through">₹{product.price.toLocaleString()}</span>
-                    <span className="bg-emerald-100 text-emerald-700 px-5 py-1 text-sm font-semibold rounded-3xl">
-                      {Math.round(((product.price - product.salePrice!) / product.price) * 100)}% OFF
-                    </span>
-                  </>
-                )}
-              </div>
-
-              <p className="text-gray-600 leading-relaxed text-lg mb-8">{product.description}</p>
-
-              <div
-                className={`inline-flex items-center px-6 py-2.5 rounded-3xl font-semibold text-sm mb-6 w-fit ${
-                  product.stock > 10
-                    ? "bg-sky-100 text-sky-700"
-                    : product.stock > 0
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-red-100 text-red-700"
-                }`}
-              >
-                {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"} • {product.stock} left
-              </div>
-
-              {cartQuantity > 0 && !isOutOfStock && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-6 py-4 rounded-3xl text-sm mb-6">
-                  You already have <span className="font-semibold">{cartQuantity}</span> in cart. Can add{" "}
-                  <span className="font-semibold">{maxAdd}</span> more.
+                <h1 className="text-3xl md:text-4xl font-bold leading-tight text-gray-900">{product.title}</h1>
+                <div className="flex items-center gap-3">
+                  <div className="flex">{getStars(product.rating || 0)}</div>
+                  <div className="text-gray-600 text-base">
+                    {product.rating || 0} <span className="text-gray-400">({product.totalReviews || 0} reviews)</span>
+                  </div>
                 </div>
-              )}
-
-              {!isOutOfStock && (
-                <div className="flex items-center bg-gray-100 rounded-3xl p-2 w-fit mb-8">
-                  <button
-                    onClick={() => handleQuantityChange(-1)}
-                    disabled={selectedQuantity <= 1}
-                    className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
-                  >
-                    −
-                  </button>
-                  <span className="font-bold text-2xl px-8">{selectedQuantity}</span>
-                  <button
-                    onClick={() => handleQuantityChange(1)}
-                    disabled={selectedQuantity >= maxAdd}
-                    className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
-                  >
-                    +
-                  </button>
-                </div>
-              )}
-
-              <div className="flex gap-4 mt-auto">
-                <button
-                  onClick={handleAddToCart}
-                  disabled={isOutOfStock || isAddingToCart || cartLoading}
-                  className="flex-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 text-[#7c2d12] font-bold py-6 rounded-3xl text-xl transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-amber-300/30"
-                >
-                  {isAddingToCart || cartLoading ? (
-                    "Adding to cart..."
-                  ) : isOutOfStock ? (
-                    "Out of Stock"
-                  ) : cartQuantity > 0 ? (
-                    `Add ${selectedQuantity} More`
-                  ) : (
-                    "Add to Cart"
+                <div className="flex items-baseline flex-wrap gap-4">
+                  <span className="text-3xl md:text-4xl font-bold text-gray-900">₹{displayPrice.toLocaleString()}</span>
+                  {hasDiscount && (
+                    <>
+                      <span className="text-lg text-gray-400 line-through">₹{product.price.toLocaleString()}</span>
+                      <span className="bg-emerald-100 text-emerald-700 px-4 py-1 text-sm font-semibold rounded-3xl">
+                        {Math.round(((product.price - product.salePrice!) / product.price) * 100)}% OFF
+                      </span>
+                    </>
                   )}
-                </button>
-
-                <button
-                  onClick={handleBuyNow}
-                  disabled={isOutOfStock || placingOrder}
-                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-6 rounded-3xl text-xl transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-emerald-300/30"
-                >
-                  {placingOrder ? "Processing..." : "Buy Now"}
-                </button>
+                </div>
               </div>
 
-              <button
-                onClick={handleWhatsAppClick}
-                className="mt-4 w-full bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-3 shadow-lg shadow-green-400/30"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
-                </svg>
-                WhatsApp
-              </button>
+              {/* Quantity selector and action buttons - On mobile they appear before description, on desktop after description */}
+              {!isOutOfStock && (
+                <div className="order-2 lg:order-3 space-y-5">
+                  <div className="flex items-center bg-gray-100 rounded-3xl p-2 w-fit">
+                    <button
+                      onClick={() => handleQuantityChange(-1)}
+                      disabled={selectedQuantity <= 1}
+                      className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
+                    >
+                      −
+                    </button>
+                    <span className="font-bold text-2xl px-8">{selectedQuantity}</span>
+                    <button
+                      onClick={() => handleQuantityChange(1)}
+                      disabled={selectedQuantity >= maxAdd}
+                      className="w-11 h-11 flex items-center justify-center text-2xl font-semibold hover:bg-white rounded-3xl transition-colors disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
 
-              <div className="text-gray-500 flex items-center gap-2 text-sm mt-6">
-                <span className="text-2xl">🚚</span>
-                Free shipping available on all orders
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button
+                      onClick={handleAddToCart}
+                      disabled={isOutOfStock || isAddingToCart || cartLoading}
+                      className="flex-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 text-[#7c2d12] font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-amber-300/30"
+                    >
+                      {isAddingToCart || cartLoading ? (
+                        "Adding..."
+                      ) : isOutOfStock ? (
+                        "Out of Stock"
+                      ) : cartQuantity > 0 ? (
+                        `Add ${selectedQuantity} More`
+                      ) : (
+                        "Add to Cart"
+                      )}
+                    </button>
+
+                    <button
+                      onClick={handleBuyNow}
+                      disabled={isOutOfStock || placingOrder}
+                      className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-300 disabled:to-gray-400 text-white font-bold py-5 rounded-3xl text-lg transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-emerald-300/30"
+                    >
+                      {placingOrder ? "Processing..." : "Buy Now"}
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleWhatsAppClick}
+                    className="w-full bg-[#25D366] hover:bg-[#20b859] text-white font-bold py-4 rounded-3xl text-base transition-all active:scale-[0.97] flex items-center justify-center gap-2 shadow-lg shadow-green-400/30"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="22"
+                      height="22"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.414 3.488 2.245 2.248 3.482 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.306 1.654zM12.043 2.032c-5.156 0-9.35 4.194-9.353 9.35 0 1.79.509 3.534 1.475 5.045l-1.004 3.667 3.766-1.002c1.468.908 3.156 1.387 4.877 1.388 5.156 0 9.35-4.194 9.35-9.35 0-2.498-.973-4.846-2.739-6.612-1.765-1.765-4.112-2.738-6.611-2.738l.149.004zM17.24 14.83c-.191-.305-1.108-.693-1.53-.761-.416-.069-.726.099-.922.315-.437.483-.674.618-.968.886-.207.188-.402.22-.736.064-.28-.13-1.175-.536-2.24-1.372-.828-.648-1.387-1.448-1.55-1.693-.163-.245-.128-.39.038-.541.16-.145.32-.324.48-.486.16-.162.213-.278.32-.463.107-.185.054-.347-.027-.486-.08-.139-.691-1.617-.95-2.216-.246-.573-.494-.492-.68-.5-.18-.008-.386-.01-.593-.01-.306 0-.784.109-1.195.542-.411.433-1.57 1.484-1.57 3.618 0 2.134 1.599 4.198 1.823 4.488.224.29 3.152 4.667 7.645 5.421 1.069.18 1.948.108 2.587-.069.643-.177 1.332-.652 1.521-1.282.189-.63.189-1.168.132-1.281-.057-.113-.21-.185-.401-.49z" />
+                    </svg>
+                    WhatsApp
+                  </button>
+                </div>
+              )}
+
+              {/* Stock & cart info - appears after description on mobile */}
+              <div className="order-3 lg:order-2 space-y-4">
+                <div
+                  className={`inline-flex items-center px-5 py-2 rounded-3xl font-semibold text-sm w-fit ${
+                    product.stock > 10
+                      ? "bg-sky-100 text-sky-700"
+                      : product.stock > 0
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"} • {product.stock} left
+                </div>
+
+                {cartQuantity > 0 && !isOutOfStock && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-5 py-3 rounded-2xl text-sm">
+                    You already have <span className="font-semibold">{cartQuantity}</span> in cart. Can add{" "}
+                    <span className="font-semibold">{maxAdd}</span> more.
+                  </div>
+                )}
+
+                <p className="text-gray-600 leading-relaxed text-base md:text-lg">{product.description}</p>
+
+                <div className="text-gray-500 flex items-center gap-2 text-sm pt-2">
+                  <span className="text-xl">🚚</span>
+                  Free shipping available on all orders
+                </div>
               </div>
             </div>
           </div>
@@ -1091,7 +1094,7 @@ export default function ProductPage() {
           {/* Related Products */}
           <div className="mt-20">
             <div className="flex items-baseline justify-between mb-8">
-              <h2 className="text-3xl font-semibold text-gray-900">You May Also Like</h2>
+              <h2 className="text-2xl md:text-3xl font-semibold text-gray-900">You May Also Like</h2>
               <Link
                 href="/all-products"
                 className="text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1 transition-colors"
