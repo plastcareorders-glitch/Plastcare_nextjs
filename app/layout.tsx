@@ -35,6 +35,11 @@ export const metadata: Metadata = {
     "barbeque stand for gas stove",
   ],
   authors: [{ name: "PlastCare" }],
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
   openGraph: {
     title: "PlastCare – Kitchen Essentials for Delhi NCR & UP",
     description:

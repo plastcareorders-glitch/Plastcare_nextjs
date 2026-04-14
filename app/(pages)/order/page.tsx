@@ -25,8 +25,10 @@ import {
   FiUser,
   FiMail,
   FiPhone,
+  FiLogOut, // ✅ Import logout icon
 } from "react-icons/fi";
 import { AiOutlineShopping } from "react-icons/ai";
+import { useAuth } from "@/app/context/AuthContext"; // ✅ Import useAuth
 
 // ==================== TYPES ====================
 interface Address {
@@ -163,6 +165,8 @@ const mapApiOrderToComponentOrder = (apiOrder: ApiOrder): Order => {
 
 export default function OrderScreen() {
   const router = useRouter();
+  const { logout } = useAuth(); // ✅ Get logout function
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -378,7 +382,7 @@ export default function OrderScreen() {
         </div>
       </div>
 
-      {/* PROFILE SECTION */}
+      {/* PROFILE SECTION with Logout */}
       <div className="max-w-7xl mx-auto px-6 -mt-10 relative z-10">
         <div className="bg-white rounded-3xl shadow-xl p-6 flex items-center gap-6 mb-6">
           <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-indigo-500 text-white rounded-2xl flex items-center justify-center text-3xl">
@@ -407,6 +411,14 @@ export default function OrderScreen() {
           <div className="text-sm text-slate-400">
             Member since {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "N/A"}
           </div>
+          {/* ✅ Logout Button */}
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-5 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl font-medium transition-all border border-red-200"
+          >
+            <FiLogOut className="text-lg" />
+            <span>Logout</span>
+          </button>
         </div>
       </div>
 
