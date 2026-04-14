@@ -1,4 +1,4 @@
-// app/api/orders/route.ts (or wherever your route lives)
+// app/api/orders/route.ts (POST handler only)
 
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
@@ -9,6 +9,9 @@ import { Product } from "@/app/_backend/models/product.model";
 import { Shipping } from "@/app/_backend/models/shipping.model";
 import { Payment } from "@/app/_backend/models/payment.model";
 import { Order } from "@/app/_backend/models/order.model";
+
+// Fixed shipping charge in INR
+const SHIPPING_CHARGE = 120;
 
 function generateTransactionId(): string {
   return `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     // Validate products & stock, prepare order items
     const orderItems = [];
-    let totalAmount = 0;
+    let itemsTotal = 0;
 
     for (const sel of selectedItems) {
       const product = await Product.findById(sel.productId);
@@ -57,8 +60,11 @@ export async function POST(req: NextRequest) {
         price,
         variant: sel.variant,
       });
-      totalAmount += price * sel.quantity;
+      itemsTotal += price * sel.quantity;
     }
+
+    // Add fixed shipping charge to total amount
+    const totalAmount = itemsTotal + SHIPPING_CHARGE;
 
     // Create payment record
     const transactionId = generateTransactionId();
@@ -75,11 +81,11 @@ export async function POST(req: NextRequest) {
       user: user._id,
       paymentMethod,
       transactionId,
-      amount: totalAmount,
+      amount: totalAmount, // includes shipping
       currency: "INR",
       status: "pending",
       gateway,
-      metadata: { notes },
+      metadata: { notes, shippingCharge: SHIPPING_CHARGE },
     });
 
     // Create order
@@ -88,7 +94,7 @@ export async function POST(req: NextRequest) {
       items: orderItems,
       shipping: shipping._id,
       payment: payment._id,
-      totalAmount,
+      totalAmount, // includes shipping
       status: "pending",
       notes: notes || null,
     });
@@ -96,10 +102,9 @@ export async function POST(req: NextRequest) {
     payment.orderId = order._id.toString();
     await payment.save();
 
-    // ✅ FIXED: Remove selected items from cart (with correct matching)
+    // Remove selected items from cart (same logic as before)
     const cart = await Cart.findOne({ user: user._id });
     if (cart && cart.items.length > 0) {
-      // Build a set of unique keys for selected items (productId + variant)
       const selectedKeys = new Set(
         selectedItems.map((sel: any) => {
           const variantKey = sel.variant
@@ -109,7 +114,6 @@ export async function POST(req: NextRequest) {
         })
       );
 
-      // Filter out items that are present in the selected set
       const remainingItems = cart.items.filter((item: any) => {
         const itemProductId = item.product._id
           ? item.product._id.toString()
@@ -121,7 +125,6 @@ export async function POST(req: NextRequest) {
         return !selectedKeys.has(itemKey);
       });
 
-      // Recalculate cart totals
       let newTotalAmount = 0;
       let newTotalItems = 0;
       for (const item of remainingItems) {
@@ -158,7 +161,7 @@ export async function POST(req: NextRequest) {
         orderId: order._id,
         paymentId: payment._id,
         transactionId,
-        amount: totalAmount,
+        amount: totalAmount, // includes shipping
       });
     } else {
       return NextResponse.json({ message: "Unsupported payment method" }, { status: 400 });
@@ -168,7 +171,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: error.message }, { status: 500 });
   }
 }
-
 // GET handler remains unchanged (it works correctly)
 export async function GET(req: NextRequest) {
   try {

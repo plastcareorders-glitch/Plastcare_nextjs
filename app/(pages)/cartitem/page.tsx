@@ -31,6 +31,9 @@ interface ShippingAddress {
   updatedAt: string;
 }
 
+// Fixed shipping charge (same as backend)
+const SHIPPING_CHARGE = 120;
+
 export default function CartPage() {
   const router = useRouter();
   const { cart, loading, error, removeFromCart, updateQuantity, clearCart, fetchCart } = useCart();
@@ -58,8 +61,7 @@ export default function CartPage() {
   });
   const [submittingAddress, setSubmittingAddress] = useState(false);
 
-  // Payment state
-  const [paymentMethod, setPaymentMethod] = useState<"cod" | "cashfree">("cod");
+  // Payment state - Only Cashfree is supported
   const [placingOrder, setPlacingOrder] = useState(false);
   const [cashfreeInstance, setCashfreeInstance] = useState<any>(null);
 
@@ -126,7 +128,8 @@ export default function CartPage() {
 
   const sanitizeSessionId = (sessionId: string): string => sessionId;
 
-  const { subtotal, shipping, tax, total, selectedCount, selectedTotal } = useMemo(() => {
+  // Calculate totals with fixed shipping charge
+  const { subtotal, tax, total, selectedCount, selectedTotal } = useMemo(() => {
     let calculatedSubtotal = 0;
     let calculatedSelectedCount = 0;
     if (cart?.items) {
@@ -138,13 +141,15 @@ export default function CartPage() {
         }
       });
     }
-    const calculatedShipping = calculatedSubtotal > 999 ? 0 : 49;
+    // Tax: 18% GST on subtotal (items only)
     const calculatedTax = Math.round(calculatedSubtotal * 0.18);
-    const calculatedTotal = calculatedSubtotal + calculatedShipping + calculatedTax;
+    // Fixed shipping charge (only if items are selected)
+    const shippingApplicable = calculatedSubtotal > 0 ? SHIPPING_CHARGE : 0;
+    const calculatedTotal = calculatedSubtotal + shippingApplicable + calculatedTax;
     return {
       subtotal: calculatedSubtotal,
-      shipping: calculatedShipping,
       tax: calculatedTax,
+      shipping: shippingApplicable,
       total: calculatedTotal,
       selectedCount: calculatedSelectedCount,
       selectedTotal: calculatedSubtotal,
@@ -378,7 +383,7 @@ export default function CartPage() {
     }
   };
 
-  // Order placement
+  // Order placement - Cashfree only
   const handlePlaceOrder = async () => {
     if (selectedItemKeys.length === 0) {
       alert("Please select at least one item to checkout");
@@ -401,7 +406,7 @@ export default function CartPage() {
 
       const payload = {
         shippingAddressId: selectedAddressId,
-        paymentMethod,
+        paymentMethod: "cashfree", // Only Cashfree is supported
         selectedItems: selectedItemsData,
         notes: "",
       };
@@ -418,16 +423,8 @@ export default function CartPage() {
         throw new Error(data.message || "Failed to create order");
       }
 
-      if (paymentMethod === "cod") {
-        // ✅ MANUALLY CLEAR CART AFTER SUCCESSFUL COD ORDER
-        await clearCart();
-        alert(`Order placed successfully! Order ID: ${data.orderId}`);
-        setSelectedItemKeys([]);
-        setPlacingOrder(false);
-        router.push(`/orders/${data.orderId}`);
-      } else if (paymentMethod === "cashfree") {
-        await handleCashfreePayment(data.orderId, data.paymentId, total);
-      }
+      // Always proceed with Cashfree (no COD option)
+      await handleCashfreePayment(data.orderId, data.paymentId, total);
     } catch (err: any) {
       console.error("Order placement error:", err);
       alert(err.message || "An error occurred while placing the order.");
@@ -764,7 +761,7 @@ export default function CartPage() {
               </div>
             </div>
 
-            {/* Order Summary Sidebar with Shipping and Payment */}
+            {/* Order Summary Sidebar with Shipping */}
             <div className="bg-white rounded-3xl shadow-xl p-8 h-fit sticky top-8">
               <h2 className="text-2xl font-semibold text-slate-900 mb-6">Order Summary</h2>
 
@@ -776,8 +773,8 @@ export default function CartPage() {
 
                 <div className="flex justify-between text-slate-600">
                   <span>Shipping</span>
-                  <span className={shipping === 0 ? "text-emerald-600 font-semibold" : ""}>
-                    {shipping === 0 ? "FREE" : `₹${shipping.toLocaleString("en-IN")}`}
+                  <span className="font-medium">
+                    {subtotal > 0 ? `₹${SHIPPING_CHARGE.toLocaleString("en-IN")}` : "—"}
                   </span>
                 </div>
 
@@ -792,12 +789,6 @@ export default function CartPage() {
                   <span>Total</span>
                   <span>₹{total.toLocaleString("en-IN")}</span>
                 </div>
-
-                {shipping === 0 && subtotal > 0 && (
-                  <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 px-5 py-4 rounded-3xl text-center text-sm font-semibold mt-2">
-                    🎉 You&apos;ve unlocked free shipping!
-                  </div>
-                )}
               </div>
 
               {/* Shipping Address Section */}
@@ -880,27 +871,7 @@ export default function CartPage() {
                 )}
               </div>
 
-              {/* Payment Method Selection */}
-              <div className="mt-6 border-t border-slate-200 pt-6">
-                <h3 className="font-semibold text-slate-900 mb-4">Payment Method</h3>
-                <div className="space-y-3">
-                
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value="cashfree"
-                      checked={paymentMethod === "cashfree"}
-                      onChange={() => setPaymentMethod("cashfree")}
-                      className="w-4 h-4 accent-emerald-500"
-                      disabled={placingOrder}
-                    />
-                    <span className="text-slate-700">Cashfree (Card/UPI/NetBanking)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Place Order Button */}
+              {/* Place Order Button - Cashfree only */}
               <button
                 onClick={handlePlaceOrder}
                 disabled={
@@ -918,7 +889,7 @@ export default function CartPage() {
                   ? "Select items to checkout"
                   : !selectedAddressId
                   ? "Select shipping address"
-                  : `Place Order (${selectedCount} items)`}
+                  : `Place Order with Cashfree (${selectedCount} items)`}
               </button>
 
               {selectedItemKeys.length > 0 && selectedAddressId && (
