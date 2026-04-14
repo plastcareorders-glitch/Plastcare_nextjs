@@ -213,6 +213,20 @@ export default function Footer() {
         .copyright p {
           margin: 0;
         }
+        .developer-credit {
+          margin-top: 0.5rem;
+          font-size: 0.75rem;
+          color: rgba(255, 255, 255, 0.8);
+        }
+        .developer-credit a {
+          color: white;
+          text-decoration: none;
+          transition: opacity 0.2s;
+        }
+        .developer-credit a:hover {
+          opacity: 0.8;
+          text-decoration: underline;
+        }
         @media (max-width: 640px) {
           .footer-bottom {
             flex-direction: column;
@@ -223,6 +237,9 @@ export default function Footer() {
             justify-content: center;
           }
           .copyright {
+            text-align: center;
+          }
+          .developer-credit {
             text-align: center;
           }
         }
@@ -375,6 +392,16 @@ export default function Footer() {
                 North Delhi – 110042, India
               </p>
               <p>Email: plastcareorders@gmail.com</p>
+              <div className="developer-credit">
+                Developed & Designed by{" "}
+                <a
+                  href="https://lucrido.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Lucrido
+                </a>
+              </div>
             </div>
           </div>
         </div>
